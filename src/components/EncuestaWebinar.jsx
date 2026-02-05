@@ -201,33 +201,6 @@ const EncuestaWebinar = () => {
     setLoading(false);
   };
 
-  // Actualizar datos cuando se selecciona un curso
-  const actualizarDatosCurso = (curso) => {
-    if (curso) {
-      setFormData({
-        nombreCompleto: curso["Nombre completo"] || '',
-        curso: curso["Curso"] || '',
-        pead: curso["Sección (PEAD)"] || '',
-        docente: curso["Docente"] || '',
-        turno: curso["Turno"] || '',
-        dias: curso["Días"] || '',
-        horaInicio: curso["Hora inicio"] || '',
-        horaFin: curso["Hora fin"] || '',
-        solicitaCertificado: formData.solicitaCertificado,
-        comentarios: formData.comentarios
-      });
-    }
-  };
-
-  // Manejar selección de curso
-  const handleSeleccionCurso = (e) => {
-    const cursoNombre = e.target.value;
-    const cursoSeleccionado = estudiantesEncontrados.find(c => c["Curso"] === cursoNombre);
-    if (cursoSeleccionado) {
-      actualizarDatosCurso(cursoSeleccionado);
-    }
-  };
-
   // Manejar cambios en el formulario
   const handleChange = (e) => {
     const { name, value, type } = e.target;
