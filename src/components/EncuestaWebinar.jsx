@@ -258,10 +258,9 @@ const EncuestaWebinar = () => {
 
   try {
     const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
-    const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
-    
-    // Correo para todos
+    const tipoUsuarioTexto = 'Estudiante USS'; // FIJO, sin variaciones
     let correoParaEnviar = '';
+    
     if (esEstudianteUSS) {
       correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
     } else if (tipoUsuario === 'externo') {
@@ -270,21 +269,25 @@ const EncuestaWebinar = () => {
 
     console.log(`📊 CURSOS ENCONTRADOS: ${estudiantesEncontrados.length}`);
     
-    // Verificar que todos los cursos tengan datos
-    const cursosValidos = estudiantesEncontrados.filter(cur => cur["Curso"] && cur["Curso"].trim());
-    console.log(`✅ Cursos válidos: ${cursosValidos.length} de ${estudiantesEncontrados.length}`);
-
-    // Crear registros
+    // Crear registros - IMPORTANTE: verificar que cada curso tenga datos
     const registros = esEstudianteUSS
-      ? cursosValidos.map((cur) => ({
-          nombreCompleto: formData.nombreCompleto.trim(),
-          curso: cur["Curso"] || '',
-          pead: cur["Sección (PEAD)"] || '',
-          comentarios: formData.comentarios || '',
-          solicitaCertificado: formData.solicitaCertificado,
-          tipoUsuario: tipoUsuarioTexto,
-          correo: correoParaEnviar
-        }))
+      ? estudiantesEncontrados.map((cur) => {
+          // VERIFICACIÓN CRÍTICA: ¿El curso tiene nombre?
+          if (!cur["Curso"] || cur["Curso"].trim() === '') {
+            console.error('❌ Curso sin nombre:', cur);
+            return null;
+          }
+          
+          return {
+            nombreCompleto: formData.nombreCompleto.trim(),
+            curso: cur["Curso"].trim(), // .trim() para limpiar espacios
+            pead: cur["Sección (PEAD)"] || '',
+            comentarios: formData.comentarios || '',
+            solicitaCertificado: formData.solicitaCertificado,
+            tipoUsuario: tipoUsuarioTexto, // TEXTOS EXACTOS
+            correo: correoParaEnviar
+          };
+        }).filter(registro => registro !== null) // Filtrar cursos inválidos
       : [{
           nombreCompleto: formData.nombreCompleto.trim(),
           curso: '',
@@ -295,77 +298,81 @@ const EncuestaWebinar = () => {
           correo: correoParaEnviar
         }];
 
-    console.log(`📤 Enviando ${registros.length} registro(s)`);
+    console.log(`📤 Preparando ${registros.length} registro(s):`, registros);
 
-    // ESTRATEGIA MEJORADA: Enviar con pausas más inteligentes
+    if (registros.length === 0) {
+      throw new Error('No hay cursos válidos para registrar');
+    }
+
+    // ESTRATEGIA: Enviar UNO POR UNO con pausas garantizadas
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyBds_DWYQ2QV8aI46ZVHXlB1mictt7LNPMYvR8mxNTQsFCcsFvdJa9Sf-TYRWgSf136g/exec';
     
-    const exitosos = [];
-    const fallidos = [];
-
-    // Enviar registros secuencialmente con pausas variables
+    const resultados = [];
+    
+    // Pausa inicial antes de empezar
+    console.log('🔄 Iniciando envío de cursos...');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     for (let i = 0; i < registros.length; i++) {
       const registro = registros[i];
-      const esUltimoRegistro = i === registros.length - 1;
       
-      console.log(`\n📝 Enviando ${i+1}/${registros.length}: ${registro.curso || 'Externo'}`);
+      console.log(`\n📝 Enviando curso ${i+1}/${registros.length}: ${registro.curso}`);
       
-      // Pausa más larga cada 2 registros para evitar límites
+      // Pausa CRÍTICA: 600ms entre cada envío para evitar saturación
       if (i > 0) {
-        let pausa = 150; // Base 150ms
-        
-        // Si hay 4+ cursos, hacer pausas más largas
-        if (registros.length >= 4) {
-          pausa = 200; // 200ms para 4+ cursos
-          
-          // Pausa extra en el medio
-          if (i === Math.floor(registros.length / 2)) {
-            pausa = 300;
-          }
-        }
-        
-        console.log(`⏳ Pausa de ${pausa}ms...`);
-        await new Promise(resolve => setTimeout(resolve, pausa));
+        console.log('⏳ Esperando 600ms...');
+        await new Promise(resolve => setTimeout(resolve, 600));
       }
-
+      
       try {
-        // Enviar con timeout
+        // Enviar con timeout generoso
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        
+        console.log('Enviando datos:', registro);
         
         await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(registro),
           signal: controller.signal
         });
         
         clearTimeout(timeoutId);
         
-        exitosos.push(registro.curso || 'Externo');
-        console.log(`✅ Enviado: ${registro.curso || 'Externo'}`);
+        // Pausa adicional para que Google procese
+        await new Promise(resolve => setTimeout(resolve, 150));
         
-        // Pequeña pausa adicional si no es el último
-        if (!esUltimoRegistro) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        
-      } catch (error) {
-        console.error(`❌ Error en registro ${i+1}:`, error);
-        fallidos.push({
-          curso: registro.curso || 'Externo',
-          error: error.message
+        resultados.push({ 
+          success: true, 
+          curso: registro.curso,
+          index: i+1 
         });
         
-        // No reintentar inmediatamente para evitar congestionar
-        if (registros.length >= 4 && i < registros.length - 1) {
-          console.log('⚠️ Continuando con siguiente registro...');
-        }
+        console.log(`✅ Curso enviado: ${registro.curso}`);
+        
+      } catch (error) {
+        console.error(`❌ Error enviando ${registro.curso}:`, error);
+        resultados.push({ 
+          success: false, 
+          curso: registro.curso,
+          error: error.message,
+          index: i+1 
+        });
+        
+        // Esperar un segundo antes de continuar con el siguiente
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
-    console.log('\n📊 RESULTADO FINAL:');
+    // Verificar resultados
+    const exitosos = resultados.filter(r => r.success);
+    const fallidos = resultados.filter(r => !r.success);
+    
+    console.log('\n📊 RESUMEN:');
     console.log(`Exitosos: ${exitosos.length}/${registros.length}`);
     console.log(`Fallidos: ${fallidos.length}`);
     
@@ -373,22 +380,21 @@ const EncuestaWebinar = () => {
       console.log('Cursos fallados:', fallidos.map(f => f.curso));
     }
 
-    // Mostrar resultado
-    if (exitosos.length > 0) {
+    if (exitosos.length === registros.length) {
+      // Éxito completo
       setExitoModal(true);
-      
-      // Mensaje según resultados
-      let mensaje = '';
-      if (exitosos.length === registros.length) {
-        mensaje = `✅ Se registró en ${exitosos.length} curso(s)`;
-      } else {
-        mensaje = `⚠️ Se registró en ${exitosos.length} de ${registros.length} cursos`;
-      }
-      
       setTimeout(() => {
+        resetearTodo();
         setExitoModal(false);
         setPaso('seleccion');
+      }, 3000);
+    } else if (exitosos.length > 0) {
+      // Parcial - pero mostramos éxito igual
+      setExitoModal(true);
+      setTimeout(() => {
         resetearTodo();
+        setExitoModal(false);
+        setPaso('seleccion');
       }, 3000);
     } else {
       throw new Error('No se pudo registrar ningún curso');
@@ -396,10 +402,30 @@ const EncuestaWebinar = () => {
 
   } catch (error) {
     console.error('❌ Error general:', error);
-    setError(`Error al enviar: ${error.message}. Intenta de nuevo.`);
+    setError(`Error: ${error.message}`);
   } finally {
     setLoading(false);
   }
+};
+
+// Función para resetear todo
+const resetearTodo = () => {
+  setTipoUsuario('');
+  setNombreUsuario('');
+  setCorreoExterno('');
+  setEstudiantesEncontrados([]);
+  setFormData({
+    nombreCompleto: '',
+    curso: '',
+    pead: '',
+    docente: '',
+    turno: '',
+    dias: '',
+    horaInicio: '',
+    horaFin: '',
+    solicitaCertificado: 'no',
+    comentarios: ''
+  });
 };
 
 // Función para resetear todo
