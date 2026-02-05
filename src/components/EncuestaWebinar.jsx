@@ -39,7 +39,6 @@ const EncuestaWebinar = () => {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [correoExterno, setCorreoExterno] = useState('');
   const [estudiantesEncontrados, setEstudiantesEncontrados] = useState([]);
-  const [cursoSeleccionado, setCursoSeleccionado] = useState('');
   const [formData, setFormData] = useState({
     nombreCompleto: '',
     curso: '',
@@ -190,7 +189,6 @@ const EncuestaWebinar = () => {
         solicitaCertificado: 'no',
         comentarios: ''
       });
-      if (encontrados.length === 1) setCursoSeleccionado(primerCurso["Curso"]);
       
       // Pasar al formulario
       setPaso('formulario');
@@ -223,7 +221,6 @@ const EncuestaWebinar = () => {
   // Manejar selección de curso
   const handleSeleccionCurso = (e) => {
     const cursoNombre = e.target.value;
-    setCursoSeleccionado(cursoNombre);
     const cursoSeleccionado = estudiantesEncontrados.find(c => c["Curso"] === cursoNombre);
     if (cursoSeleccionado) {
       actualizarDatosCurso(cursoSeleccionado);
@@ -342,7 +339,6 @@ const EncuestaWebinar = () => {
         setNombreUsuario('');
         setCorreoExterno('');
         setEstudiantesEncontrados([]);
-        setCursoSeleccionado('');
         setFormData({
           nombreCompleto: '',
           curso: '',
@@ -890,6 +886,19 @@ const EncuestaWebinar = () => {
                           <div className="fw-bold" style={{ color: '#63ed12' }}>
                             Te registrarás en todos tus cursos ({estudiantesEncontrados.length})
                           </div>
+                          <label className="form-label mt-2 mb-1" style={{ fontSize: '14px', color: '#1a5e20' }}>
+                            Ver detalles de:
+                          </label>
+                          <select
+                            className="form-select form-select-sm mb-2"
+                            style={{ maxWidth: '320px' }}
+                            value={formData.curso || ''}
+                            onChange={handleSeleccionCurso}
+                          >
+                            {estudiantesEncontrados.map((c, i) => (
+                              <option key={i} value={c["Curso"]}>{c["Curso"]} – {c["Sección (PEAD)"]} ({c["Turno"]})</option>
+                            ))}
+                          </select>
                           <ul className="mb-0 mt-2 ps-3" style={{ fontSize: '14px', color: '#1a5e20' }}>
                             {estudiantesEncontrados.map((c, i) => (
                               <li key={i}>{c["Curso"]} – {c["Sección (PEAD)"]} ({c["Turno"]})</li>
