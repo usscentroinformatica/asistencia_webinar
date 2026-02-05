@@ -57,6 +57,7 @@ const EncuestaWebinar = () => {
   const [exitoModal, setExitoModal] = useState(false);
   const [baseEstudiantes, setBaseEstudiantes] = useState([]);
   const [paso, setPaso] = useState('seleccion');
+  const [progreso, setProgreso] = useState({ actual: 0, total: 0 });
 
   // Cargar base de datos al iniciar
   useEffect(() => {
@@ -304,100 +305,61 @@ const EncuestaWebinar = () => {
       throw new Error('No hay cursos válidos para registrar');
     }
 
-    // ESTRATEGIA: Enviar UNO POR UNO con pausas garantizadas
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyBds_DWYQ2QV8aI46ZVHXlB1mictt7LNPMYvR8mxNTQsFCcsFvdJa9Sf-TYRWgSf136g/exec';
-    
-    const resultados = [];
-    
-    // Pausa inicial antes de empezar
-    console.log('🔄 Iniciando envío de cursos...');
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    for (let i = 0; i < registros.length; i++) {
-      const registro = registros[i];
-      
-      console.log(`\n📝 Enviando curso ${i+1}/${registros.length}: ${registro.curso}`);
-      
-      // Pausa CRÍTICA: 600ms entre cada envío para evitar saturación
-      if (i > 0) {
-        console.log('⏳ Esperando 600ms...');
-        await new Promise(resolve => setTimeout(resolve, 600));
-      }
-      
-      try {
-        // Enviar con timeout generoso
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        
-        console.log('Enviando datos:', registro);
-        
-        await fetch(GOOGLE_SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(registro),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        // Pausa adicional para que Google procese
-        await new Promise(resolve => setTimeout(resolve, 150));
-        
-        resultados.push({ 
-          success: true, 
-          curso: registro.curso,
-          index: i+1 
-        });
-        
-        console.log(`✅ Curso enviado: ${registro.curso}`);
-        
-      } catch (error) {
-        console.error(`❌ Error enviando ${registro.curso}:`, error);
-        resultados.push({ 
-          success: false, 
-          curso: registro.curso,
-          error: error.message,
-          index: i+1 
-        });
-        
-        // Esperar un segundo antes de continuar con el siguiente
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
+    // Establecer progreso inicial
+    setProgreso({ actual: 0, total: registros.length });
 
-    // Verificar resultados
-    const exitosos = resultados.filter(r => r.success);
-    const fallidos = resultados.filter(r => !r.success);
+    // ESTRATEGIA: Enviar todos los registros al proxy en un solo request
+    const PROXY_URL = '/api/enviar-encuesta';
     
-    console.log('\n📊 RESUMEN:');
-    console.log(`Exitosos: ${exitosos.length}/${registros.length}`);
-    console.log(`Fallidos: ${fallidos.length}`);
+    console.log(`🔄 Iniciando envío de ${registros.length} registro(s) al proxy...`);
     
-    if (fallidos.length > 0) {
-      console.log('Cursos fallados:', fallidos.map(f => f.curso));
+    // Simular progreso mientras se envía
+    let progresoInterval;
+    if (registros.length > 1) {
+      progresoInterval = setInterval(() => {
+        setProgreso(prev => ({
+          actual: Math.min(prev.actual + 1, prev.total - 1),
+          total: prev.total
+        }));
+      }, 200);
     }
+    
+    try {
+      // Enviar todos los registros al proxy
+      const response = await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ registros })
+      });
 
-    if (exitosos.length === registros.length) {
-      // Éxito completo
+      if (progresoInterval) clearInterval(progresoInterval);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      // Completar progreso
+      setProgreso({ actual: registros.length, total: registros.length });
+      
+      console.log(`✅ Encuesta enviada exitosamente:`, result);
+      
+      // Mostrar modal de éxito
       setExitoModal(true);
       setTimeout(() => {
         resetearTodo();
         setExitoModal(false);
         setPaso('seleccion');
       }, 3000);
-    } else if (exitosos.length > 0) {
-      // Parcial - pero mostramos éxito igual
-      setExitoModal(true);
-      setTimeout(() => {
-        resetearTodo();
-        setExitoModal(false);
-        setPaso('seleccion');
-      }, 3000);
-    } else {
-      throw new Error('No se pudo registrar ningún curso');
+
+    } catch (error) {
+      if (progresoInterval) clearInterval(progresoInterval);
+      console.error(`❌ Error al enviar:`, error);
+      throw error;
     }
 
   } catch (error) {
@@ -428,25 +390,81 @@ const resetearTodo = () => {
   });
 };
 
-// Función para resetear todo
-const resetearTodo = () => {
-  setTipoUsuario('');
-  setNombreUsuario('');
-  setCorreoExterno('');
-  setEstudiantesEncontrados([]);
-  setFormData({
-    nombreCompleto: '',
-    curso: '',
-    pead: '',
-    docente: '',
-    turno: '',
-    dias: '',
-    horaInicio: '',
-    horaFin: '',
-    solicitaCertificado: 'no',
-    comentarios: ''
-  });
-};
+  // Modal de progreso
+  if (loading && progreso.total > 0) {
+    return (
+      <div style={{ 
+        position: 'fixed', 
+        inset: 0, 
+        backgroundColor: 'rgba(0,0,0,0.8)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        zIndex: 9999 
+      }}>
+        <div style={{ 
+          backgroundColor: 'white', 
+          padding: '60px 50px', 
+          borderRadius: '20px', 
+          textAlign: 'center', 
+          maxWidth: '520px', 
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)' 
+        }}>
+          <div style={{ 
+            fontSize: '48px', 
+            marginBottom: '30px', 
+            animation: 'spin 2s linear infinite'
+          }}>
+            📤
+          </div>
+          <h1 style={{ 
+            color: '#5a2290', 
+            fontSize: '32px', 
+            margin: '0 0 30px', 
+            fontWeight: '700' 
+          }}>
+            Enviando Encuesta
+          </h1>
+          <div style={{ 
+            fontSize: '24px', 
+            color: '#63ed12', 
+            fontWeight: 'bold',
+            marginBottom: '30px'
+          }}>
+            {progreso.actual}/{progreso.total}
+          </div>
+          <div style={{ 
+            width: '100%', 
+            height: '8px', 
+            backgroundColor: '#e0e0e0', 
+            borderRadius: '10px',
+            overflow: 'hidden',
+            marginBottom: '20px'
+          }}>
+            <div style={{ 
+              height: '100%', 
+              backgroundColor: '#63ed12', 
+              width: `${(progreso.actual / progreso.total) * 100}%`,
+              transition: 'width 0.3s ease'
+            }}></div>
+          </div>
+          <p style={{ 
+            fontSize: '16px', 
+            color: '#5f6368',
+            margin: '0'
+          }}>
+            Por favor espera, procesando tu solicitud...
+          </p>
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </div>
+    );
+  }
 
   // Modal de éxito
   if (exitoModal) {
