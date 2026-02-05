@@ -994,19 +994,6 @@ const resetearTodo = () => {
                           <div className="fw-bold" style={{ color: '#63ed12' }}>
                             Te registrarás en todos tus cursos ({estudiantesEncontrados.length})
                           </div>
-                          <label className="form-label mt-2 mb-1" style={{ fontSize: '14px', color: '#1a5e20' }}>
-                            Ver detalles de:
-                          </label>
-                          <select
-                            className="form-select form-select-sm mb-2"
-                            style={{ maxWidth: '320px' }}
-                            value={formData.curso || ''}
-                            onChange={handleSeleccionCurso}
-                          >
-                            {estudiantesEncontrados.map((c, i) => (
-                              <option key={i} value={c["Curso"]}>{c["Curso"]} – {c["Sección (PEAD)"]} ({c["Turno"]})</option>
-                            ))}
-                          </select>
                           <ul className="mb-0 mt-2 ps-3" style={{ fontSize: '14px', color: '#1a5e20' }}>
                             {estudiantesEncontrados.map((c, i) => (
                               <li key={i}>{c["Curso"]} – {c["Sección (PEAD)"]} ({c["Turno"]})</li>
