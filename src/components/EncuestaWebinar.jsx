@@ -247,119 +247,180 @@ const EncuestaWebinar = () => {
   };
 
   const enviarEncuesta = async () => {
-    // Validar nombre completo (obligatorio para todos)
-    if (!formData.nombreCompleto.trim()) {
-      setError('El nombre completo es requerido');
-      return;
+  // Validar nombre completo (obligatorio para todos)
+  if (!formData.nombreCompleto.trim()) {
+    setError('El nombre completo es requerido');
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+
+  try {
+    const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
+    const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
+    
+    // Correo para todos
+    let correoParaEnviar = '';
+    if (esEstudianteUSS) {
+      correoParaEnviar = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
+    } else if (tipoUsuario === 'externo') {
+      correoParaEnviar = correoExterno.trim();
     }
 
-    // Validar correo para usuarios externos
-    if (tipoUsuario === 'externo' && !correoExterno.trim()) {
-      setError('Por favor, ingresa tu correo electrónico');
-      return;
-    }
+    console.log(`📊 CURSOS ENCONTRADOS: ${estudiantesEncontrados.length}`);
+    
+    // Verificar que todos los cursos tengan datos
+    const cursosValidos = estudiantesEncontrados.filter(cur => cur["Curso"] && cur["Curso"].trim());
+    console.log(`✅ Cursos válidos: ${cursosValidos.length} de ${estudiantesEncontrados.length}`);
 
-    // Validar formato de correo para externos
-    if (tipoUsuario === 'externo' && correoExterno.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(correoExterno.trim())) {
-        setError('Por favor, ingresa un correo electrónico válido');
-        return;
+    // Crear registros
+    const registros = esEstudianteUSS
+      ? cursosValidos.map((cur) => ({
+          nombreCompleto: formData.nombreCompleto.trim(),
+          curso: cur["Curso"] || '',
+          pead: cur["Sección (PEAD)"] || '',
+          comentarios: formData.comentarios || '',
+          solicitaCertificado: formData.solicitaCertificado,
+          tipoUsuario: tipoUsuarioTexto,
+          correo: correoParaEnviar
+        }))
+      : [{
+          nombreCompleto: formData.nombreCompleto.trim(),
+          curso: '',
+          pead: '',
+          comentarios: formData.comentarios || '',
+          solicitaCertificado: formData.solicitaCertificado,
+          tipoUsuario: tipoUsuarioTexto,
+          correo: correoParaEnviar
+        }];
+
+    console.log(`📤 Enviando ${registros.length} registro(s)`);
+
+    // ESTRATEGIA MEJORADA: Enviar con pausas más inteligentes
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyBds_DWYQ2QV8aI46ZVHXlB1mictt7LNPMYvR8mxNTQsFCcsFvdJa9Sf-TYRWgSf136g/exec';
+    
+    const exitosos = [];
+    const fallidos = [];
+
+    // Enviar registros secuencialmente con pausas variables
+    for (let i = 0; i < registros.length; i++) {
+      const registro = registros[i];
+      const esUltimoRegistro = i === registros.length - 1;
+      
+      console.log(`\n📝 Enviando ${i+1}/${registros.length}: ${registro.curso || 'Externo'}`);
+      
+      // Pausa más larga cada 2 registros para evitar límites
+      if (i > 0) {
+        let pausa = 150; // Base 150ms
+        
+        // Si hay 4+ cursos, hacer pausas más largas
+        if (registros.length >= 4) {
+          pausa = 200; // 200ms para 4+ cursos
+          
+          // Pausa extra en el medio
+          if (i === Math.floor(registros.length / 2)) {
+            pausa = 300;
+          }
+        }
+        
+        console.log(`⏳ Pausa de ${pausa}ms...`);
+        await new Promise(resolve => setTimeout(resolve, pausa));
       }
-    }
 
-    setLoading(true);
-    setError('');
-
-    try {
-      // En producción (Vercel) usamos nuestro API para evitar CORS con Google. En local, llamamos directo a Google.
-      const esProduccion = process.env.NODE_ENV === 'production';
-      const urlApi = esProduccion ? '/api/enviar-encuesta' : null;
-      const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyBds_DWYQ2QV8aI46ZVHXlB1mictt7LNPMYvR8mxNTQsFCcsFvdJa9Sf-TYRWgSf136g/exec';
-
-      const esEstudianteUSS = tipoUsuario === 'uss' && estudiantesEncontrados.length > 0;
-      const tipoUsuarioTexto = esEstudianteUSS ? 'Estudiante USS' : 'Externo';
-      let correoParaEnviar = esEstudianteUSS ? `${nombreUsuario}@uss.edu.pe` : correoExterno.trim();
-
-      // Siempre armamos un array de registros (1 para externo, N para estudiante USS)
-      const registros = esEstudianteUSS
-        ? estudiantesEncontrados.map((cur) => ({
-            nombreCompleto: formData.nombreCompleto.trim(),
-            curso: cur["Curso"] || '',
-            pead: cur["Sección (PEAD)"] || '',
-            comentarios: formData.comentarios || '',
-            solicitaCertificado: formData.solicitaCertificado,
-            tipoUsuario: tipoUsuarioTexto,
-            correo: correoParaEnviar
-          }))
-        : [{
-            nombreCompleto: formData.nombreCompleto.trim(),
-            curso: '',
-            pead: '',
-            comentarios: formData.comentarios || '',
-            solicitaCertificado: formData.solicitaCertificado,
-            tipoUsuario: tipoUsuarioTexto,
-            correo: correoParaEnviar
-          }];
-
-      console.log(`📤 Enviando ${registros.length} registro(s) (${tipoUsuarioTexto})${esProduccion ? ' vía API' : ''}:`, registros);
-
-      if (esProduccion && urlApi) {
-        // Vercel: un solo POST a nuestra API (mismo origen, sin CORS); el servidor reenvía a Google
-        const resp = await fetch(urlApi, {
+      try {
+        // Enviar con timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos
+        
+        await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
+          mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registros })
+          body: JSON.stringify(registro),
+          signal: controller.signal
         });
-        if (!resp.ok) {
-          const errData = await resp.json().catch(() => ({}));
-          throw new Error(errData.error || `Error ${resp.status}`);
+        
+        clearTimeout(timeoutId);
+        
+        exitosos.push(registro.curso || 'Externo');
+        console.log(`✅ Enviado: ${registro.curso || 'Externo'}`);
+        
+        // Pequeña pausa adicional si no es el último
+        if (!esUltimoRegistro) {
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
-      } else {
-        // Local: envío directo a Google (pausa corta entre envíos para no perder registros)
-        for (const datos of registros) {
-          await fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(datos)
-          });
-          await new Promise((r) => setTimeout(r, 80));
+        
+      } catch (error) {
+        console.error(`❌ Error en registro ${i+1}:`, error);
+        fallidos.push({
+          curso: registro.curso || 'Externo',
+          error: error.message
+        });
+        
+        // No reintentar inmediatamente para evitar congestionar
+        if (registros.length >= 4 && i < registros.length - 1) {
+          console.log('⚠️ Continuando con siguiente registro...');
         }
       }
+    }
 
-      // Mostrar mensaje de éxito
+    console.log('\n📊 RESULTADO FINAL:');
+    console.log(`Exitosos: ${exitosos.length}/${registros.length}`);
+    console.log(`Fallidos: ${fallidos.length}`);
+    
+    if (fallidos.length > 0) {
+      console.log('Cursos fallados:', fallidos.map(f => f.curso));
+    }
+
+    // Mostrar resultado
+    if (exitosos.length > 0) {
       setExitoModal(true);
       
-      // Esperar y limpiar
+      // Mensaje según resultados
+      let mensaje = '';
+      if (exitosos.length === registros.length) {
+        mensaje = `✅ Se registró en ${exitosos.length} curso(s)`;
+      } else {
+        mensaje = `⚠️ Se registró en ${exitosos.length} de ${registros.length} cursos`;
+      }
+      
       setTimeout(() => {
         setExitoModal(false);
         setPaso('seleccion');
-        setTipoUsuario('');
-        setNombreUsuario('');
-        setCorreoExterno('');
-        setEstudiantesEncontrados([]);
-        setFormData({
-          nombreCompleto: '',
-          curso: '',
-          pead: '',
-          docente: '',
-          turno: '',
-          dias: '',
-          horaInicio: '',
-          horaFin: '',
-          solicitaCertificado: 'no',
-          comentarios: ''
-        });
-      }, 2000);
-
-    } catch (error) {
-      console.error('❌ Error:', error);
-      setError('Error al enviar. Revisa tu hoja de cálculo.');
-    } finally {
-      setLoading(false);
+        resetearTodo();
+      }, 3000);
+    } else {
+      throw new Error('No se pudo registrar ningún curso');
     }
-  };
+
+  } catch (error) {
+    console.error('❌ Error general:', error);
+    setError(`Error al enviar: ${error.message}. Intenta de nuevo.`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Función para resetear todo
+const resetearTodo = () => {
+  setTipoUsuario('');
+  setNombreUsuario('');
+  setCorreoExterno('');
+  setEstudiantesEncontrados([]);
+  setFormData({
+    nombreCompleto: '',
+    curso: '',
+    pead: '',
+    docente: '',
+    turno: '',
+    dias: '',
+    horaInicio: '',
+    horaFin: '',
+    solicitaCertificado: 'no',
+    comentarios: ''
+  });
+};
 
   // Modal de éxito
   if (exitoModal) {
