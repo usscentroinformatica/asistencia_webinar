@@ -18,7 +18,15 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { registros } = req.body || {};
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch (_) {
+      return res.status(400).json({ error: 'Body JSON inválido' });
+    }
+  }
+  const { registros } = body || {};
   if (!registros || !Array.isArray(registros) || registros.length === 0) {
     return res.status(400).json({ error: 'Se requiere body.registros (array)' });
   }
