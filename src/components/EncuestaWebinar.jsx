@@ -306,22 +306,25 @@ const EncuestaWebinar = () => {
     }
 
     // Establecer progreso inicial
-    setProgreso({ actual: 0, total: registros.length });
+    setProgreso({ actual: 1, total: registros.length });
 
     // ESTRATEGIA: Enviar todos los registros al proxy en un solo request
     const PROXY_URL = '/api/enviar-encuesta';
     
     console.log(`🔄 Iniciando envío de ${registros.length} registro(s) al proxy...`);
     
-    // Simular progreso mientras se envía
+    // Simular progreso mientras se envía (incrementa cada 650ms, coincidiendo con pausa del servidor)
     let progresoInterval;
     if (registros.length > 1) {
       progresoInterval = setInterval(() => {
-        setProgreso(prev => ({
-          actual: Math.min(prev.actual + 1, prev.total - 1),
-          total: prev.total
-        }));
-      }, 200);
+        setProgreso(prev => {
+          const siguiente = Math.min(prev.actual + 1, prev.total);
+          return {
+            actual: siguiente,
+            total: prev.total
+          };
+        });
+      }, 650);
     }
     
     try {
